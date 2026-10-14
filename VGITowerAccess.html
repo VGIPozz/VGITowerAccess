@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tower Access Attestation</title>
+<meta name="theme-color" content="#0b5cab">
+<style>
+  :root {
+    --bg: #f3f5f8;
+    --card: #ffffff;
+    --ink: #14181f;
+    --muted: #5b6573;
+    --line: #dde2ea;
+    --accent: #0b5cab;
+    --accent-ink: #ffffff;
+    --accent-soft: #e6f0fb;
+    --ok: #1d7a46;
+    --ok-soft: #e5f5ec;
+    --warn: #b3261e;
+    --warn-soft: #fdecea;
+    --field: #ffffff;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17191d; --card: #22252b; --ink: #eef1f5; --muted: #a3acb9; --line: #353a42;
+      --accent: #5aa2ec; --accent-ink: #0b1220; --accent-soft: #1d2f45;
+      --ok: #5fcf8d; --ok-soft: #173326; --warn: #ff8a80; --warn-soft: #3a1e1c;
+      --field: #1b1e23; --shadow: none; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17191d; --card: #22252b; --ink: #eef1f5; --muted: #a3acb9; --line: #353a42;
+    --accent: #5aa2ec; --accent-ink: #0b1220; --accent-soft: #1d2f45;
+    --ok: #5fcf8d; --ok-soft: #173326; --warn: #ff8a80; --warn-soft: #3a1e1c;
+    --field: #1b1e23; --shadow: none; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+  header.top {
+    background: var(--accent); color: var(--accent-ink);
+    padding: 18px 16px 20px;
+  }
+  header.top .kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; opacity: .85; font-weight: 600; }
+  header.top h1 { margin: 4px 0 2px; font-size: 22px; line-height: 1.2; font-weight: 700; }
+  header.top p { margin: 0; font-size: 14px; opacity: .9; }
+  main { max-width: 640px; margin: 0 auto; padding: 12px 16px 0; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow); margin: 12px 0; overflow: hidden;
+  }
+  .card > h2 {
+    margin: 0; padding: 12px 14px; font-size: 15px; font-weight: 700;
+    border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .card > h2 .count { font-weight: 600; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .card > h2 .count.done { color: var(--ok); }
+  .pad { padding: 14px; }
+  label.f { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 6px; }
+  .field { margin-bottom: 14px; }
+  .field:last-child { margin-bottom: 0; }
+  input[type=text], input[type=datetime-local], input[type=date] {
+    width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: var(--field);
+    border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px; min-height: 46px;
+    appearance: none; -webkit-appearance: none;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .invalid input, input.invalid { border-color: var(--warn); background: var(--warn-soft); }
+  .err { color: var(--warn); font-size: 13px; margin-top: 4px; display: none; }
+  .invalid .err, .err.show { display: block; }
+
+  .item {
+    display: flex; gap: 12px; align-items: flex-start; padding: 14px; cursor: pointer;
+    border-top: 1px solid var(--line); -webkit-tap-highlight-color: transparent; user-select: none;
+  }
+  .item:first-of-type { border-top: 0; }
+  .item input { position: absolute; opacity: 0; pointer-events: none; }
+  .box {
+    flex: 0 0 28px; height: 28px; border: 2px solid var(--muted); border-radius: 7px;
+    display: grid; place-items: center; margin-top: 1px; transition: background .12s, border-color .12s;
+  }
+  .box svg { width: 18px; height: 18px; stroke: #fff; stroke-width: 3; fill: none; opacity: 0; }
+  .item.checked { background: var(--ok-soft); }
+  .item.checked .box { background: var(--ok); border-color: var(--ok); }
+  .item.checked .box svg { opacity: 1; }
+  .item .txt { font-size: 15px; }
+  .item:focus-within .box { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .worker { display: grid; grid-template-columns: 1fr 1fr 40px; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .worker input { min-height: 44px; }
+  .icon-btn {
+    width: 40px; height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--field);
+    color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer;
+  }
+  .btn {
+    font: inherit; font-weight: 600; font-size: 15px; border-radius: 10px; min-height: 46px; padding: 0 16px;
+    border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.link { border: 0; background: none; color: var(--accent); padding: 0 4px; min-height: 36px; }
+  .btn[disabled] { opacity: .5; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .cert { font-size: 14px; color: var(--muted); background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+  .cert strong { color: var(--ink); }
+  .sigwrap { position: relative; border: 1.5px dashed var(--muted); border-radius: 10px; background: #fff; overflow: hidden; }
+  .sigwrap.invalid { border-color: var(--warn); }
+  #sig { display: block; width: 100%; height: 180px; touch-action: none; }
+  .sigline { position: absolute; left: 16px; right: 16px; bottom: 38px; border-bottom: 1px solid #c4c9d1; pointer-events: none; }
+  .sighint { position: absolute; left: 16px; bottom: 14px; font-size: 12px; color: #8a929e; pointer-events: none; }
+  .sigwrap.has .sighint { display: none; }
+
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    background: var(--card); border-top: 1px solid var(--line);
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  }
+  .bar .in { max-width: 640px; margin: 0 auto; display: flex; gap: 12px; align-items: center; }
+  .prog { flex: 1; min-width: 0; }
+  .prog .lbl { font-size: 13px; color: var(--muted); }
+  .prog .lbl b { color: var(--ink); }
+  .track { height: 6px; background: var(--line); border-radius: 3px; margin-top: 5px; overflow: hidden; }
+  .track i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .2s; }
+  .bar .btn.primary { flex: 0 0 auto; }
+
+  dialog {
+    border: 0; border-radius: 14px; padding: 0; width: min(520px, calc(100% - 32px));
+    background: var(--card); color: var(--ink); box-shadow: 0 20px 50px rgba(0,0,0,.3);
+  }
+  dialog::backdrop { background: rgba(10,14,20,.55); }
+  dialog .pad h3 { margin: 0 0 8px; font-size: 18px; }
+  dialog ul { margin: 8px 0 0; padding-left: 20px; font-size: 14px; color: var(--muted); max-height: 40vh; overflow: auto; }
+  dialog .acts { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 14px; }
+  .note { font-size: 13px; color: var(--muted); }
+  .saved { font-size: 12px; color: var(--muted); text-align: center; margin: 16px 0 8px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="kicker">Bell Mobility – Tower Access</div>
+  <h1>Pre-climb health &amp; safety attestation</h1>
+  <p>Complete before the climb. A PDF is produced on submit.</p>
+</header>
+
+<main id="form">
+  <section class="card">
+    <h2>Work activity</h2>
+    <div class="pad">
+      <div class="field" data-req="contractor">
+        <label class="f" for="contractor">Contractor</label>
+        <input type="text" id="contractor" autocomplete="organization">
+        <div class="err">Enter the contractor.</div>
+      </div>
+      <div class="field" data-req="site">
+        <label class="f" for="site">Site</label>
+        <input type="text" id="site" placeholder="Site name or ID">
+        <div class="err">Enter the site.</div>
+      </div>
+      <div class="field" data-req="when">
+        <label class="f" for="when">Date and time of work activity</label>
+        <input type="datetime-local" id="when">
+        <div class="err">Enter the date and time.</div>
+      </div>
+    </div>
+  </section>
+
+  <div id="sections"></div>
+
+  <section class="card" id="workersCard">
+    <h2>List of workers on site <span class="count" id="workerCount"></span></h2>
+    <div class="pad">
+      <div class="worker" style="margin-bottom:4px"><label class="f" style="margin:0">Name</label><label class="f" style="margin:0">Title</label><span></span></div>
+      <div id="workers"></div>
+      <div class="err" id="workersErr">Add at least one worker with a name.</div>
+      <button type="button" class="btn link" id="addWorker">+ Add worker</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Certification</h2>
+    <div class="pad">
+      <div class="field" data-req="byName">
+        <label class="f" for="byName">Completed by — name</label>
+        <input type="text" id="byName" autocomplete="name">
+        <div class="err">Enter your name.</div>
+      </div>
+      <div class="field" data-req="byTitle">
+        <label class="f" for="byTitle">Title</label>
+        <input type="text" id="byTitle" autocomplete="organization-title">
+        <div class="err">Enter your title.</div>
+      </div>
+      <div class="field" data-req="byDate">
+        <label class="f" for="byDate">Date</label>
+        <input type="date" id="byDate">
+        <div class="err">Enter the date.</div>
+      </div>
+      <div class="cert" id="certText"></div>
+      <label class="f">Signature</label>
+      <div class="sigwrap" id="sigwrap">
+        <canvas id="sig" aria-label="Signature pad: sign with your finger"></canvas>
+        <div class="sigline"></div>
+        <div class="sighint">Sign here with your finger</div>
+      </div>
+      <div class="err" id="sigErr">Sign above to certify.</div>
+      <div class="row" style="margin-top:8px"><button type="button" class="btn" id="clearSig">Clear signature</button></div>
+    </div>
+  </section>
+
+  <div class="row" style="justify-content:center;margin-top:8px">
+    <button type="button" class="btn link" id="resetAll">Start a new blank form</button>
+  </div>
+  <p class="saved" id="savedNote">Your progress is saved on this device until you start a new form.</p>
+</main>
+
+<div class="bar">
+  <div class="in">
+    <div class="prog">
+      <div class="lbl"><b id="progN">0</b> of <span id="progT">0</span> items confirmed</div>
+      <div class="track"><i id="progBar"></i></div>
+    </div>
+    <button type="button" class="btn primary" id="submit">Create PDF</button>
+  </div>
+</div>
+
+<dialog id="dlgUnchecked">
+  <div class="pad">
+    <h3>Some items aren't confirmed</h3>
+    <p class="note" style="margin:0">These will appear unchecked on the PDF. Only continue if that's accurate.</p>
+    <ul id="uncheckedList"></ul>
+  </div>
+  <div class="acts">
+    <button type="button" class="btn primary" id="goBack">Go back and review</button>
+    <button type="button" class="btn" id="proceedAnyway">Create PDF anyway</button>
+  </div>
+</dialog>
+
+<dialog id="dlgDone">
+  <div class="pad">
+    <h3>PDF ready</h3>
+    <p class="note" style="margin:0" id="doneName"></p>
+  </div>
+  <div class="acts">
+    <button type="button" class="btn primary" id="sharePdf" hidden>Share or save PDF</button>
+    <button type="button" class="btn" id="downloadPdf">Download PDF</button>
+    <button type="button" class="btn" id="openPdf">Open PDF</button>
+    <button type="button" class="btn link" id="closeDone">Close</button>
+  </div>
+</dialog>
+
+<script>
+/* ---------------- Form content (matches the paper form, V1.0) ---------------- */
+const SECTIONS = [
+  { title: 'Fall Protection Plan', items: [
+    'Field Level Hazard Assessment (FLHA) documented prior to commencing the activity?',
+    'Fall protection plan, specific to the site, structure and work performed is developed prior to the activity taking place?',
+    'Fall protection plan reviewed and signed by all person involved prior to the activity taking place?' ] },
+  { title: 'Fall Protection System', items: [
+    'All workers were instructed to comply with the fall protection plan, safe work procedures and safe use of the appropriate fall protection system and PPEs during the activity?' ] },
+  { title: 'Structure Inspection', items: [
+    'Pre-climb structure inspection completed prior to proceeding with the activity?',
+    'Results of the inspections are considered as part of the fall protection plan?' ] },
+  { title: 'Instruction Verification', items: [
+    'Every worker engaged in work activity and who uses protection equipment is provided with instruction by a qualified person in the use of that equipment?' ] },
+  { title: 'Rescue Plan', items: [
+    'A documented rescue plan is available on site, reviewed and signed by all person involved prior to the activity?',
+    'Qualified rescuers are present for the full duration of the activity?',
+    'Rescue equipment inspected and confirmed safe to use prior to the climb?' ] },
+  { title: 'Required Documentation', newPage: true, items: [
+    'Submit the completed fall protection plan prior to commencement of work activities.',
+    'FLHA is included in the Fall Protection Plan documentation. If not, submit a copy.',
+    'If conditions change during the work and the fall protection plan needs to be modified, the most recent version is also provided after the activity is completed.' ] }
+];
+const FOOTER_LEFT = '2025 | Corporate Health and Safety | V1.0';
+const STORE_KEY = 'towerAttestationDraft.v1';
+
+/* ---------------- Storage (optional; never required) ---------------- */
+const store = {
+  get() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (e) { return null; } },
+  set(v) { try { localStorage.setItem(STORE_KEY, JSON.stringify(v)); return true; } catch (e) { return false; } },
+  clear() { try { localStorage.removeItem(STORE_KEY); } catch (e) {} }
+};
+
+const $ = id => document.getElementById(id);
+const checks = []; // {section, text, el}
+
+/* ---------------- Build checklist UI ---------------- */
+function buildSections() {
+  const host = $('sections');
+  const tick = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  SECTIONS.forEach((s, si) => {
+    const card = document.createElement('section');
+    card.className = 'card';
+    card.innerHTML = `<h2>${s.title}<span class="count" id="cnt${si}"></span></h2>`;
+    s.items.forEach((t, ii) => {
+      const id = `c${si}_${ii}`;
+      const lab = document.createElement('label');
+      lab.className = 'item';
+      lab.htmlFor = id;
+      lab.innerHTML = `<input type="checkbox" id="${id}"><span class="box">${tick}</span><span class="txt"></span>`;
+      lab.querySelector('.txt').textContent = t;
+      card.appendChild(lab);
+      const input = lab.querySelector('input');
+      input.addEventListener('change', () => { lab.classList.toggle('checked', input.checked); updateProgress(); save(); });
+      checks.push({ si, section: s.title, text: t, el: input, lab });
+    });
+    host.appendChild(card);
+  });
+  $('progT').textContent = checks.length;
+}
+
+function updateProgress() {
+  const n = checks.filter(c => c.el.checked).length;
+  $('progN').textContent = n;
+  $('progBar').style.width = (100 * n / checks.length) + '%';
+  SECTIONS.forEach((s, si) => {
+    const sub = checks.filter(c => c.si === si);
+    const k = sub.filter(c => c.el.checked).length;
+    const el = $('cnt' + si);
+    el.textContent = `${k}/${sub.length}`;
+    el.classList.toggle('done', k === sub.length);
+  });
+}
+
+/* ---------------- Workers ---------------- */
+function addWorker(name = '', title = '', focus = false) {
+  const row = document.createElement('div');
+  row.className = 'worker';
+  row.innerHTML = `<input type="text" aria-label="Worker name" placeholder="Name"><input type="text" aria-label="Worker title" placeholder="Title"><button type="button" class="icon-btn" aria-label="Remove worker">×</button>`;
+  const [n, t] = row.querySelectorAll('input');
+  n.value = name; t.value = title;
+  row.querySelector('button').addEventListener('click', () => {
+    row.remove();
+    if (!$('workers').children.length) addWorker();
+    countWorkers(); save();
+  });
+  row.addEventListener('input', () => { countWorkers(); save(); });
+  $('workers').appendChild(row);
+  if (focus) n.focus();
+  countWorkers();
+}
+function getWorkers() {
+  return [...$('workers').children].map(r => {
+    const [n, t] = r.querySelectorAll('input');
+    return { name: n.value.trim(), title: t.value.trim() };
+  }).filter(w => w.name || w.title);
+}
+function countWorkers() {
+  const k = getWorkers().filter(w => w.name).length;
+  $('workerCount').textContent = k ? `${k} listed` : '';
+}
+
+/* ---------------- Certification text ---------------- */
+function updateCert() {
+  const nm = $('byName').value.trim(), ti = $('byTitle').value.trim();
+  const who = (nm || ti) ? [nm, ti].filter(Boolean).join(', ') : '[Name & Title]';
+  $('certText').innerHTML = '';
+  $('certText').append('I, ');
+  const b = document.createElement('strong'); b.textContent = who;
+  $('certText').append(b, ', hereby certify that all the information provided herein is true, complete, and accurate.');
+}
+
+/* ---------------- Signature pad ---------------- */
+const sig = { canvas: null, ctx: null, drawing: false, has: false, last: null, cssW: 0, cssH: 0 };
+function initSig() {
+  sig.canvas = $('sig'); sig.ctx = sig.canvas.getContext('2d');
+  sizeSig(null);
+  const pos = e => { const r = sig.canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  sig.canvas.addEventListener('pointerdown', e => {
+    e.preventDefault(); sig.canvas.setPointerCapture(e.pointerId);
+    sig.drawing = true; sig.last = pos(e);
+    const c = sig.ctx; c.beginPath(); c.arc(sig.last.x, sig.last.y, 1.2, 0, Math.PI * 2); c.fill();
+  });
+  sig.canvas.addEventListener('pointermove', e => {
+    if (!sig.drawing) return; e.preventDefault();
+    const pts = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    const c = sig.ctx;
+    for (const pe of pts) {
+      const p = pos(pe);
+      c.beginPath(); c.moveTo(sig.last.x, sig.last.y); c.lineTo(p.x, p.y); c.stroke();
+      sig.last = p;
+    }
+    if (!sig.has) { sig.has = true; $('sigwrap').classList.add('has'); $('sigwrap').classList.remove('invalid'); $('sigErr').classList.remove('show'); }
+  });
+  const end = () => { if (sig.drawing) { sig.drawing = false; if (sig.has) save(); } };
+  sig.canvas.addEventListener('pointerup', end);
+  sig.canvas.addEventListener('pointercancel', end);
+  let rt; window.addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => { if (sig.canvas.clientWidth !== sig.cssW) sizeSig(sig.has ? sig.canvas.toDataURL('image/png') : null); }, 150);
+  });
+}
+function sizeSig(restoreUrl) {
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  sig.cssW = sig.canvas.clientWidth || 320; sig.cssH = sig.canvas.clientHeight || 180;
+  sig.canvas.width = Math.round(sig.cssW * dpr); sig.canvas.height = Math.round(sig.cssH * dpr);
+  const c = sig.ctx;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.fillStyle = '#fff'; c.fillRect(0, 0, sig.cssW, sig.cssH);
+  c.strokeStyle = '#0d1a33'; c.fillStyle = '#0d1a33'; c.lineWidth = 2.4; c.lineCap = 'round'; c.lineJoin = 'round';
+  if (restoreUrl) {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(sig.cssW / img.width, sig.cssH / img.height);
+      const w = img.width * k, h = img.height * k;
+      c.drawImage(img, 0, 0, w, h);
+      c.fillStyle = '#0d1a33';
+      sig.has = true; $('sigwrap').classList.add('has');
+    };
+    img.src = restoreUrl;
+  }
+}
+function clearSig() {
+  sig.has = false; $('sigwrap').classList.remove('has');
+  sizeSig(null); save();
+}
+/* Trimmed, downscaled JPEG of the signature for the PDF */
+function sigJpeg() {
+  const src = sig.canvas, w = src.width, h = src.height;
+  const data = sig.ctx.getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    if (data[i] < 200 || data[i + 1] < 200 || data[i + 2] < 200) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  if (x1 < 0) return null;
+  const m = Math.round(8 * (src.width / sig.cssW));
+  x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(w - 1, x1 + m); y1 = Math.min(h - 1, y1 + m);
+  const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+  const scale = Math.min(1, 900 / cw);
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(cw * scale)); out.height = Math.max(1, Math.round(ch * scale));
+  const oc = out.getContext('2d');
+  oc.fillStyle = '#fff'; oc.fillRect(0, 0, out.width, out.height);
+  oc.drawImage(src, x0, y0, cw, ch, 0, 0, out.width, out.height);
+  const url = out.toDataURL('image/jpeg', 0.9);
+  return { bytes: atob(url.split(',')[1]), w: out.width, h: out.height };
+}
+
+/* ---------------- Draft save / restore ---------------- */
+let saveTimer;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    store.set({
+      contractor: $('contractor').value, site: $('site').value, when: $('when').value,
+      byName: $('byName').value, byTitle: $('byTitle').value, byDate: $('byDate').value,
+      checks: checks.map(c => c.el.checked),
+      workers: [...$('workers').children].map(r => [...r.querySelectorAll('input')].map(i => i.value)),
+      sig: sig.has ? sig.canvas.toDataURL('image/png') : null
+    });
+  }, 250);
+}
+function restore() {
+  const d = store.get();
+  if (!d) { addWorker(); return false; }
+  ['contractor', 'site', 'when', 'byName', 'byTitle', 'byDate'].forEach(k => { if (d[k] != null) $(k).value = d[k]; });
+  (d.checks || []).forEach((v, i) => { if (checks[i]) { checks[i].el.checked = !!v; checks[i].lab.classList.toggle('checked', !!v); } });
+  (d.workers && d.workers.length ? d.workers : [['', '']]).forEach(w => addWorker(w[0] || '', w[1] || ''));
+  if (d.sig) sizeSig(d.sig);
+  return true;
+}
+function localDateValue(dt) {
+  const p = n => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+}
+function localDateTimeValue(dt) {
+  const p = n => String(n).padStart(2, '0');
+  return `${localDateValue(dt)}T${p(dt.getHours())}:${p(dt.getMinutes())}`;
+}
+function setDefaults() {
+  const now = new Date();
+  if (!$('when').value) $('when').value = localDateTimeValue(now);
+  if (!$('byDate').value) $('byDate').value = localDateValue(now);
+}
+function resetAll() {
+  if (!confirm('Clear everything and start a new blank form?')) return;
+  store.clear();
+  ['contractor', 'site', 'when', 'byName', 'byTitle', 'byDate'].forEach(k => $(k).value = '');
+  checks.forEach(c => { c.el.checked = false; c.lab.classList.remove('checked'); });
+  $('workers').innerHTML = ''; addWorker();
+  clearSig(); setDefaults(); updateProgress(); updateCert();
+  document.querySelectorAll('.invalid').forEach(e => e.classList.remove('invalid'));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ---------------- Validation ---------------- */
+function validate() {
+  let first = null;
+  const mark = (el, bad) => { el.classList.toggle('invalid', bad); if (bad && !first) first = el; };
+  document.querySelectorAll('[data-req]').forEach(f => mark(f, !$(f.dataset.req).value.trim()));
+  const wOk = getWorkers().some(w => w.name);
+  $('workersErr').classList.toggle('show', !wOk); if (!wOk && !first) first = $('workersCard');
+  $('sigwrap').classList.toggle('invalid', !sig.has); $('sigErr').classList.toggle('show', !sig.has);
+  if (!sig.has && !first) first = $('sigwrap');
+  if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  return !first;
+}
+
+/* ================= Minimal PDF writer (no dependencies) ================= */
+const HELV = [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584];
+const HELVB = [278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584];
+const WIN = { '€':128,'‚':130,'ƒ':131,'„':132,'…':133,'†':134,'‡':135,'ˆ':136,'‰':137,'Š':138,'‹':139,'Œ':140,'Ž':142,'‘':145,'’':146,'“':147,'”':148,'•':149,'–':150,'—':151,'˜':152,'™':153,'š':154,'›':155,'œ':156,'ž':158,'Ÿ':159 };
+function winAnsi(s) {
+  let o = '';
+  for (const ch of String(s).replace(/[\r\n\t]+/g, ' ')) {
+    const c = ch.codePointAt(0);
+    if (c >= 32 && c < 127) o += ch;
+    else if (c >= 128 && c <= 255) o += String.fromCharCode(c); // Latin-1, or already WinAnsi-encoded
+    else if (WIN[ch]) o += String.fromCharCode(WIN[ch]);
+    else o += '?';
+  }
+  return o;
+}
+function cw(code, bold) {
+  if (code >= 32 && code <= 126) return (bold ? HELVB : HELV)[code - 32];
+  if (code === 150) return 556; if (code === 151) return 1000;
+  if (code === 145 || code === 146) return bold ? 278 : 222;
+  if (code === 147 || code === 148) return bold ? 500 : 333;
+  if (code >= 192 && code <= 222) return 722;
+  return 556;
+}
+function textW(enc, size, bold) { let w = 0; for (let i = 0; i < enc.length; i++) w += cw(enc.charCodeAt(i), bold); return w * size / 1000; }
+function wrap(text, size, bold, maxW) {
+  const words = winAnsi(text).split(' ').filter(Boolean), lines = [];
+  let cur = '';
+  for (let w of words) {
+    while (textW(w, size, bold) > maxW) { // hard-break very long words
+      let k = 1; while (k < w.length && textW(w.slice(0, k + 1), size, bold) <= maxW) k++;
+      if (cur) { lines.push(cur); cur = ''; }
+      lines.push(w.slice(0, k)); w = w.slice(k);
+    }
+    const t = cur ? cur + ' ' + w : w;
+    if (textW(t, size, bold) <= maxW) cur = t; else { if (cur) lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [''];
+}
+const esc = s => s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+const n2 = v => (Math.round(v * 100) / 100).toString();
+
+class Pdf {
+  constructor() { this.W = 612; this.H = 792; this.pages = []; this.image = null; this.addPage(); }
+  addPage() { this.ops = []; this.pages.push(this.ops); this.y = 54; }
+  Y(y) { return this.H - y; }
+  text(x, top, str, size, opt = {}) {
+    const enc = winAnsi(str), bold = !!opt.bold;
+    let xx = x;
+    if (opt.align === 'center') xx = x - textW(enc, size, bold) / 2;
+    if (opt.align === 'right') xx = x - textW(enc, size, bold);
+    const base = this.Y(top + size * 0.78);
+    this.ops.push(`BT ${opt.gray != null ? opt.gray + ' g ' : '0 g '}/${bold ? 'F2' : 'F1'} ${size} Tf 1 0 0 1 ${n2(xx)} ${n2(base)} Tm (${esc(enc)}) Tj ET`);
+  }
+  rect(x, top, w, h, { fill = null, stroke = true, lw = 0.6 } = {}) {
+    const y = this.Y(top + h);
+    if (fill != null) this.ops.push(`${fill} g ${n2(x)} ${n2(y)} ${n2(w)} ${n2(h)} re f 0 g`);
+    if (stroke) this.ops.push(`0 G ${lw} w ${n2(x)} ${n2(y)} ${n2(w)} ${n2(h)} re S`);
+  }
+  line(x1, t1, x2, t2, lw = 0.6) { this.ops.push(`0 G ${lw} w ${n2(x1)} ${n2(this.Y(t1))} m ${n2(x2)} ${n2(this.Y(t2))} l S`); }
+  tick(cx, cy) { // check mark centred at cx,cy (top-down coords)
+    this.ops.push(`0 G 1.4 w 1 J 1 j ${n2(cx - 3.2)} ${n2(this.Y(cy + 0.2))} m ${n2(cx - 0.9)} ${n2(this.Y(cy + 2.8))} l ${n2(cx + 3.6)} ${n2(this.Y(cy - 2.9))} l S 0 J 0 j`);
+  }
+  img(x, top, w, h) { this.ops.push(`q ${n2(w)} 0 0 ${n2(h)} ${n2(x)} ${n2(this.Y(top + h))} cm /Im1 Do Q`); }
+  output(title) {
+    const objs = [];
+    const add = s => { objs.push(s); return objs.length; };
+    const cat = add(null), pagesId = add(null);
+    const f1 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+    const f2 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    let imId = null;
+    if (this.image) imId = add(`<< /Type /XObject /Subtype /Image /Width ${this.image.w} /Height ${this.image.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${this.image.bytes.length} >>\nstream\n${this.image.bytes}\nendstream`);
+    const res = `<< /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >>${imId ? ` /XObject << /Im1 ${imId} 0 R >>` : ''} >>`;
+    const kids = [];
+    for (const ops of this.pages) {
+      const body = ops.join('\n');
+      const c = add(`<< /Length ${body.length} >>\nstream\n${body}\nendstream`);
+      kids.push(add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${this.W} ${this.H}] /Resources ${res} /Contents ${c} 0 R >>`));
+    }
+    objs[cat - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
+    objs[pagesId - 1] = `<< /Type /Pages /Kids [${kids.map(k => k + ' 0 R').join(' ')}] /Count ${kids.length} >>`;
+    const d = new Date(), p = v => String(v).padStart(2, '0');
+    const info = add(`<< /Title (${esc(winAnsi(title))}) /Producer (Tower Access Attestation app) /CreationDate (D:${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}) >>`);
+    let out = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
+    const offs = [];
+    objs.forEach((o, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+    const xref = out.length;
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offs.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('');
+    out += `trailer\n<< /Size ${objs.length + 1} /Root ${cat} 0 R /Info ${info} 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    const bytes = new Uint8Array(out.length);
+    for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
+    return bytes;
+  }
+}
+
+function fmtWhen(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  if (isNaN(d)) return v;
+  return d.toLocaleString('en-CA', { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+function fmtDate(v) {
+  if (!v) return '';
+  const d = new Date(v + 'T12:00');
+  return isNaN(d) ? v : d.toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function buildPdf(data) {
+  const pdf = new Pdf();
+  const L = 60, R = 552, TW = R - L, CHK = 108, TX = R - CHK; // table geometry
+  const BOTTOM = 730;
+  const ensure = h => { if (pdf.y + h > BOTTOM) pdf.addPage(); };
+
+  // Header
+  pdf.text(pdf.W / 2, pdf.y, 'Bell Mobility – Tower Access', 24, { align: 'center' }); pdf.y += 30;
+  pdf.text(pdf.W / 2, pdf.y, 'Pre-climb health and safety attestation', 11, { align: 'center' }); pdf.y += 28;
+  const field = (label, value) => {
+    const lw = textW(winAnsi(label + ' '), 11, false);
+    pdf.text(L, pdf.y, label, 11);
+    const lines = wrap(value, 11, true, TW - lw);
+    lines.forEach((ln, i) => pdf.text(L + lw, pdf.y + i * 14, ln, 11, { bold: true }));
+    pdf.y += 14 * lines.length + 1;
+  };
+  field('Contractor:', data.contractor);
+  field('Site:', data.site);
+  field('Date and time of work activity:', fmtWhen(data.when));
+  pdf.y += 12;
+
+  // Checklist table
+  let idx = 0;
+  SECTIONS.forEach(s => {
+    if (s.newPage) pdf.addPage();
+    ensure(16 + 26);
+    pdf.rect(L, pdf.y, TW, 16, { fill: 0.86 });
+    pdf.text(L + 6, pdf.y + 3.5, s.title, 9.5);
+    pdf.y += 16;
+    s.items.forEach(t => {
+      const lines = wrap(t, 9.5, false, TX - L - 12);
+      const h = Math.max(30, lines.length * 12 + 10);
+      ensure(h);
+      pdf.rect(L, pdf.y, TW, h);
+      pdf.line(TX, pdf.y, TX, pdf.y + h);
+      lines.forEach((ln, i) => pdf.text(L + 6, pdf.y + 5 + i * 12, ln, 9.5));
+      const cx = TX + CHK / 2, cy = pdf.y + 12;
+      pdf.rect(cx - 5, cy - 5, 10, 10, { lw: 0.8 });
+      if (data.checks[idx]) pdf.tick(cx, cy);
+      pdf.y += h; idx++;
+    });
+  });
+
+  // Workers
+  pdf.y += 22; ensure(40);
+  pdf.text(L, pdf.y, 'List of workers on site', 11); pdf.y += 18;
+  const half = TW / 2;
+  const wHead = () => {
+    pdf.rect(L, pdf.y, TW, 18, { fill: 0.86 }); pdf.line(L + half, pdf.y, L + half, pdf.y + 18);
+    pdf.text(L + 6, pdf.y + 4.5, 'Name', 9.5, { bold: true }); pdf.text(L + half + 6, pdf.y + 4.5, 'Title', 9.5, { bold: true });
+    pdf.y += 18;
+  };
+  wHead();
+  const rows = data.workers.length ? data.workers : [{ name: '', title: '' }];
+  rows.forEach(w => {
+    const a = wrap(w.name, 10, false, half - 12), b = wrap(w.title, 10, false, half - 12);
+    const h = Math.max(22, Math.max(a.length, b.length) * 12.5 + 9);
+    if (pdf.y + h > BOTTOM) { pdf.addPage(); wHead(); }
+    pdf.rect(L, pdf.y, TW, h); pdf.line(L + half, pdf.y, L + half, pdf.y + h);
+    a.forEach((ln, i) => pdf.text(L + 6, pdf.y + 6 + i * 12.5, ln, 10));
+    b.forEach((ln, i) => pdf.text(L + half + 6, pdf.y + 6 + i * 12.5, ln, 10));
+    pdf.y += h;
+  });
+
+  // Completed by + certification + signature
+  pdf.y += 26; ensure(170);
+  const who = [data.byName, data.byTitle].filter(Boolean).join(', ');
+  pdf.text(L, pdf.y, 'Completed By:', 11);
+  const cbw = textW(winAnsi('Completed By: '), 11, false);
+  pdf.text(L + cbw, pdf.y, who, 11, { bold: true });
+  pdf.text(400, pdf.y, 'Date:', 11);
+  pdf.text(400 + textW('Date: ', 11, false), pdf.y, fmtDate(data.byDate), 11, { bold: true });
+  pdf.y += 24;
+  wrap(`I, ${who}, hereby certify that all the information provided herein is true, complete, and accurate`, 11, false, TW)
+    .forEach(ln => { pdf.text(L, pdf.y, ln, 11); pdf.y += 14; });
+  pdf.y += 14;
+  if (data.sig) {
+    const maxW = 230, maxH = 80, s = Math.min(maxW / data.sig.w, maxH / data.sig.h);
+    const w = data.sig.w * s, h = data.sig.h * s;
+    pdf.image = data.sig;
+    pdf.img(L, pdf.y + (maxH - h), w, h);
+  }
+  pdf.y += 82;
+  pdf.line(L, pdf.y, L + 240, pdf.y, 0.7);
+  pdf.text(L, pdf.y + 4, 'Signature', 9, { gray: 0.35 });
+
+  // Footers
+  const stamp = 'Completed electronically ' + new Date().toLocaleString('en-CA', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  pdf.pages.forEach((ops, i) => {
+    pdf.ops = ops;
+    pdf.text(L, 752, FOOTER_LEFT, 9);
+    pdf.text(R, 752, `Page ${i + 1}`, 9, { align: 'right' });
+    pdf.text(L, 765, stamp, 7.5, { gray: 0.45 });
+  });
+  return pdf.output('Pre-climb attestation - ' + data.site);
+}
+
+/* ---------------- Submit flow ---------------- */
+let lastPdf = null;
+function collect() {
+  return {
+    contractor: $('contractor').value.trim(), site: $('site').value.trim(), when: $('when').value,
+    byName: $('byName').value.trim(), byTitle: $('byTitle').value.trim(), byDate: $('byDate').value,
+    checks: checks.map(c => c.el.checked), workers: getWorkers(), sig: sigJpeg()
+  };
+}
+function fileName(d) {
+  const clean = s => (s || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 40);
+  return `PreClimb-Attestation_${clean(d.site) || 'site'}_${(d.when || '').slice(0, 10) || localDateValue(new Date())}.pdf`;
+}
+function makePdf() {
+  const d = collect();
+  const bytes = buildPdf(d);
+  const name = fileName(d);
+  if (lastPdf) URL.revokeObjectURL(lastPdf.url);
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  lastPdf = { blob, name, url: URL.createObjectURL(blob) };
+  $('doneName').textContent = name;
+  let canShare = false;
+  try { canShare = !!(navigator.canShare && navigator.canShare({ files: [new File([blob], name, { type: 'application/pdf' })] })); } catch (e) {}
+  $('sharePdf').hidden = !canShare;
+  $('dlgDone').showModal();
+}
+function onSubmit() {
+  if (!validate()) return;
+  const missing = checks.filter(c => !c.el.checked);
+  if (missing.length) {
+    const ul = $('uncheckedList'); ul.innerHTML = '';
+    missing.forEach(c => { const li = document.createElement('li'); li.textContent = `${c.section}: ${c.text}`; ul.appendChild(li); });
+    $('dlgUnchecked').showModal();
+    return;
+  }
+  makePdf();
+}
+async function sharePdf() {
+  try { await navigator.share({ files: [new File([lastPdf.blob], lastPdf.name, { type: 'application/pdf' })], title: lastPdf.name }); }
+  catch (e) { if (e && e.name !== 'AbortError') downloadPdf(); }
+}
+function downloadPdf() {
+  const a = document.createElement('a'); a.href = lastPdf.url; a.download = lastPdf.name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ---------------- Teams integration (optional; the page works without it) ---------------- */
+function applyTeamsTheme(t) {
+  document.documentElement.setAttribute('data-theme', t === 'default' ? 'light' : 'dark');
+}
+function initTeams() {
+  const s = document.createElement('script');
+  s.src = 'https://unpkg.com/@microsoft/teams-js@2/dist/MicrosoftTeams.min.js';
+  s.async = true;
+  s.onload = async () => {
+    const mt = window.microsoftTeams;
+    if (!mt || !mt.app) return;
+    try {
+      await mt.app.initialize();
+      const ctx = await mt.app.getContext();
+      if (ctx && ctx.app && ctx.app.theme) applyTeamsTheme(ctx.app.theme);
+      mt.app.registerOnThemeChangeHandler(applyTeamsTheme);
+      const u = ctx && ctx.user;
+      if (u && !$('byName').value && u.displayName) { $('byName').value = u.displayName; updateCert(); save(); }
+      mt.app.notifySuccess();
+    } catch (e) { /* not running inside Teams — fine */ }
+  };
+  document.head.appendChild(s);
+}
+
+/* ---------------- Wire up ---------------- */
+buildSections();
+initSig();
+restore();
+setDefaults();
+updateProgress();
+updateCert();
+document.querySelectorAll('[data-req] input').forEach(i => i.addEventListener('input', () => {
+  i.closest('[data-req]').classList.remove('invalid'); save();
+}));
+['byName', 'byTitle'].forEach(k => $(k).addEventListener('input', updateCert));
+$('addWorker').addEventListener('click', () => { addWorker('', '', true); $('workersErr').classList.remove('show'); });
+$('clearSig').addEventListener('click', clearSig);
+$('resetAll').addEventListener('click', resetAll);
+$('submit').addEventListener('click', onSubmit);
+$('goBack').addEventListener('click', () => {
+  $('dlgUnchecked').close();
+  const first = checks.find(c => !c.el.checked);
+  if (first) first.lab.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+$('proceedAnyway').addEventListener('click', () => { $('dlgUnchecked').close(); makePdf(); });
+$('sharePdf').addEventListener('click', sharePdf);
+$('downloadPdf').addEventListener('click', downloadPdf);
+$('openPdf').addEventListener('click', () => window.open(lastPdf.url, '_blank'));
+$('closeDone').addEventListener('click', () => $('dlgDone').close());
+initTeams();
+</script>
+</body>
+</html>
