@@ -760,12 +760,13 @@ function collect() {
   };
 }
 function fileName(d) {
-  const clean = s => (s || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 40);
-  const now = new Date(), p = v => String(v).padStart(2, '0');
-  const day = (d.when || '').slice(0, 10) || localDateValue(now);
-  const stamp = `${p(now.getHours())}${p(now.getMinutes())}`;
-  const rnd = Math.random().toString(36).slice(2, 6);
-  return `PreClimb-Attestation_${clean(d.site) || 'site'}_${day}_${stamp}-${rnd}.pdf`;
+  // "<Site> <Date> <Time> Pre-Climb Attestation.pdf", using the work activity date and time (24-hour, e.g. 0830)
+  // characters SharePoint doesn't allow in file names are removed
+  const clean = s => (s || '').replace(/["*:<>?\/\\|#%~&{}]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^\.+|\.+$/g, '').slice(0, 60).trim();
+  const when = d.when || localDateTimeValue(new Date());
+  const day = when.slice(0, 10);
+  const time = when.slice(11, 16).replace(':', '');
+  return `${clean(d.site) || 'Site'} ${day}${time ? ' ' + time : ''} Pre-Climb Attestation.pdf`;
 }
 function bytesToBase64(bytes) {
   let bin = '';
