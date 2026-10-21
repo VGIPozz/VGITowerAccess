@@ -741,12 +741,10 @@ function buildPdf(data) {
   pdf.text(L, pdf.y + 4, 'Signature', 9, { gray: 0.35 });
 
   // Footers
-  const stamp = 'Completed electronically ' + new Date().toLocaleString('en-CA', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   pdf.pages.forEach((ops, i) => {
     pdf.ops = ops;
     pdf.text(L, 752, FOOTER_LEFT, 9);
     pdf.text(R, 752, `Page ${i + 1}`, 9, { align: 'right' });
-    pdf.text(L, 765, stamp, 7.5, { gray: 0.45 });
   });
   return pdf.output('Pre-climb attestation - ' + data.site);
 }
