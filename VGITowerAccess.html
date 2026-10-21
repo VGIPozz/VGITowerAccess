@@ -141,6 +141,25 @@
   dialog .acts { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 14px; }
   .note { font-size: 13px; color: var(--muted); }
   .saved { font-size: 12px; color: var(--muted); text-align: center; margin: 16px 0 8px; }
+  .banner {
+    display: flex; gap: 10px; align-items: center; justify-content: space-between;
+    background: var(--warn-soft); color: var(--ink); border: 1px solid var(--warn); border-radius: 10px;
+    padding: 10px 12px; margin: 12px 0 0; font-size: 14px;
+  }
+  .banner[hidden] { display: none; }
+  .status { border-radius: 10px; padding: 10px 12px; margin-top: 12px; font-size: 14px; background: var(--accent-soft); }
+  .status[hidden] { display: none; }
+  .status.ok { background: var(--ok-soft); color: var(--ink); }
+  .status.ok b { color: var(--ok); }
+  .status.bad { background: var(--warn-soft); }
+  .status.bad b { color: var(--warn); }
+  .conn { text-align: center; font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+  .conn button { font-size: 13px; min-height: 32px; }
+  textarea {
+    width: 100%; min-height: 96px; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--ink);
+    background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 10px; resize: vertical; word-break: break-all;
+  }
+  .copybox { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; word-break: break-all; background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; max-height: 96px; overflow: auto; }
 </style>
 </head>
 <body>
@@ -151,6 +170,10 @@
 </header>
 
 <main id="form">
+  <div class="banner" id="outboxBanner" hidden>
+    <span id="outboxText"></span>
+    <button type="button" class="btn" id="outboxRetry" style="min-height:38px">Retry</button>
+  </div>
   <section class="card">
     <h2>Work activity</h2>
     <div class="pad">
@@ -218,6 +241,7 @@
     <button type="button" class="btn link" id="resetAll">Start a new blank form</button>
   </div>
   <p class="saved" id="savedNote">Your progress is saved on this device until you start a new form.</p>
+  <p class="conn"><span id="connLabel"></span> <button type="button" class="btn link" id="openConnect">Settings</button></p>
 </main>
 
 <div class="bar">
@@ -244,14 +268,33 @@
 
 <dialog id="dlgDone">
   <div class="pad">
-    <h3>PDF ready</h3>
+    <h3 id="doneTitle">PDF ready</h3>
     <p class="note" style="margin:0" id="doneName"></p>
+    <div class="status" id="postStatus" hidden></div>
   </div>
   <div class="acts">
-    <button type="button" class="btn primary" id="sharePdf" hidden>Share or save PDF</button>
+    <button type="button" class="btn" id="sharePdf" hidden>Share or save PDF</button>
     <button type="button" class="btn" id="downloadPdf">Download PDF</button>
     <button type="button" class="btn" id="openPdf">Open PDF</button>
+    <button type="button" class="btn primary" id="newForm">Start a new blank form</button>
     <button type="button" class="btn link" id="closeDone">Close</button>
+  </div>
+</dialog>
+
+<dialog id="dlgConnect">
+  <div class="pad">
+    <h3>Teams channel connection</h3>
+    <p class="note" style="margin:0 0 10px">Paste the address of the Power Automate flow that posts attestations to your channel. It's saved on this device only.</p>
+    <textarea id="flowUrl" placeholder="https://…" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+    <div class="err" id="flowErr">That doesn't look like a flow address (it should start with https://).</div>
+    <div class="status" id="testStatus" hidden></div>
+  </div>
+  <div class="acts">
+    <button type="button" class="btn primary" id="saveFlow">Save</button>
+    <button type="button" class="btn" id="testFlow">Send a test post</button>
+    <button type="button" class="btn" id="clearOutbox" hidden>Discard forms waiting to post</button>
+    <button type="button" class="btn" id="removeFlow">Disconnect</button>
+    <button type="button" class="btn link" id="closeConnect">Close</button>
   </div>
 </dialog>
 
@@ -480,8 +523,8 @@ function setDefaults() {
   if (!$('when').value) $('when').value = localDateTimeValue(now);
   if (!$('byDate').value) $('byDate').value = localDateValue(now);
 }
-function resetAll() {
-  if (!confirm('Clear everything and start a new blank form?')) return;
+function resetAll(skipConfirm) {
+  if (skipConfirm !== true && !confirm('Clear everything and start a new blank form?')) return;
   store.clear();
   ['contractor', 'site', 'when', 'byName', 'byTitle', 'byDate'].forEach(k => $(k).value = '');
   checks.forEach(c => { c.el.checked = false; c.lab.classList.remove('checked'); });
@@ -710,6 +753,7 @@ function buildPdf(data) {
 
 /* ---------------- Submit flow ---------------- */
 let lastPdf = null;
+let teamsUser = null; // { name, upn } when running inside Teams
 function collect() {
   return {
     contractor: $('contractor').value.trim(), site: $('site').value.trim(), when: $('when').value,
@@ -719,8 +763,143 @@ function collect() {
 }
 function fileName(d) {
   const clean = s => (s || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 40);
-  return `PreClimb-Attestation_${clean(d.site) || 'site'}_${(d.when || '').slice(0, 10) || localDateValue(new Date())}.pdf`;
+  const now = new Date(), p = v => String(v).padStart(2, '0');
+  const day = (d.when || '').slice(0, 10) || localDateValue(now);
+  const stamp = `${p(now.getHours())}${p(now.getMinutes())}`;
+  const rnd = Math.random().toString(36).slice(2, 6);
+  return `PreClimb-Attestation_${clean(d.site) || 'site'}_${day}_${stamp}-${rnd}.pdf`;
 }
+function bytesToBase64(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+const htmlEsc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* What gets sent to the Power Automate flow */
+function buildSubmission(d, bytes, name, opts = {}) {
+  const total = checks.length, done = d.checks.filter(Boolean).length;
+  const missing = checks.filter((c, i) => !d.checks[i]).map(c => `${c.section}: ${c.text}`);
+  const who = [d.byName, d.byTitle].filter(Boolean).join(', ');
+  const workers = d.workers.map(w => w.title ? `${w.name} (${w.title})` : w.name).join('; ');
+  const checklistHtml = missing.length
+    ? `<b>Checklist:</b> &#9888;&#65039; ${done} of ${total} items confirmed. <b>Not confirmed:</b><br>${missing.map(m => '&bull; ' + htmlEsc(m)).join('<br>')}`
+    : `<b>Checklist:</b> &#9989; All ${total} items confirmed`;
+  const messageHtml = opts.test
+    ? `<b>Connection test</b> from the Tower Access attestation app${teamsUser && teamsUser.name ? ' by ' + htmlEsc(teamsUser.name) : ''}. If you can see this, posting works.`
+    : [
+        `<b>Pre-climb attestation submitted</b>`,
+        `<b>Site:</b> ${htmlEsc(d.site)}`,
+        `<b>Contractor:</b> ${htmlEsc(d.contractor)}`,
+        `<b>Work date/time:</b> ${htmlEsc(fmtWhen(d.when))}`,
+        `<b>Completed by:</b> ${htmlEsc(who)} (${htmlEsc(fmtDate(d.byDate))})`,
+        `<b>Workers on site (${d.workers.length}):</b> ${htmlEsc(workers)}`,
+        checklistHtml
+      ].join('<br>');
+  return {
+    version: 1,
+    id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)),
+    test: !!opts.test,
+    fileName: name,
+    pdfBase64: bytesToBase64(bytes),
+    messageHtml,
+    site: d.site, contractor: d.contractor, workDateTime: fmtWhen(d.when),
+    completedBy: d.byName, completedByTitle: d.byTitle, signedDate: fmtDate(d.byDate),
+    itemsConfirmed: done, itemsTotal: total, allConfirmed: !missing.length,
+    notConfirmed: missing.join('; '), workers,
+    submittedAt: new Date().toISOString(),
+    submittedByTeamsUser: teamsUser ? (teamsUser.upn || teamsUser.name || '') : ''
+  };
+}
+
+/* ---------------- Teams channel connection (Power Automate flow) ---------------- */
+const FLOW_KEY = 'towerAttestationFlow.v1', OUTBOX_KEY = 'towerAttestationOutbox.v1', MODE_KEY = 'towerAttestationFlowMode.v1';
+const mem = {}; // fallback if browser storage is blocked
+const kv = {
+  get(k) { try { const v = localStorage.getItem(k); return v != null ? v : (mem[k] != null ? mem[k] : null); } catch (e) { return mem[k] != null ? mem[k] : null; } },
+  set(k, v) { mem[k] = v; try { localStorage.setItem(k, v); } catch (e) {} },
+  del(k) { delete mem[k]; try { localStorage.removeItem(k); } catch (e) {} }
+};
+const validFlowUrl = u => /^(https:\/\/[^\s]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/[^\s]*)$/i.test((u || '').trim()); // http only for local testing
+function flowUrl() { return kv.get(FLOW_KEY) || ''; }
+/* The flow address can arrive in the Teams tab URL (#flow=… or ?flow=…) so it never has to be in this public file */
+function readFlowFromUrl() {
+  const grab = str => { const m = (str || '').match(/[#?&]flow=([^&]+)/); return m ? decodeURIComponent(m[1]) : null; };
+  const u = grab(location.hash) || grab(location.search);
+  if (u && validFlowUrl(u)) kv.set(FLOW_KEY, u.trim());
+}
+function getOutbox() { try { return JSON.parse(kv.get(OUTBOX_KEY) || '[]'); } catch (e) { return []; } }
+function setOutbox(list) { kv.set(OUTBOX_KEY, JSON.stringify(list)); updateConnUi(); }
+
+function updateConnUi() {
+  const connected = !!flowUrl();
+  $('connLabel').textContent = connected ? 'Posting to Teams channel: on.' : 'Posting to Teams channel: not set up.';
+  $('submit').textContent = connected ? 'Submit' : 'Create PDF';
+  $('proceedAnyway').textContent = connected ? 'Submit anyway' : 'Create PDF anyway';
+  const n = getOutbox().length;
+  $('outboxBanner').hidden = !n;
+  $('outboxText').textContent = n === 1 ? '1 form is waiting to post to Teams.' : `${n} forms are waiting to post to Teams.`;
+  $('clearOutbox').hidden = !n;
+}
+
+/* Returns { state: 'ok' | 'unconfirmed' | 'offline' | 'error', detail } */
+async function sendOne(payload, url) {
+  const body = JSON.stringify(payload);
+  const timed = (opts) => {
+    const ctl = window.AbortController ? new AbortController() : null;
+    const t = setTimeout(() => ctl && ctl.abort(), 45000);
+    return fetch(url, Object.assign({ method: 'POST', body, signal: ctl ? ctl.signal : undefined }, opts)).finally(() => clearTimeout(t));
+  };
+  if (kv.get(MODE_KEY) !== 'nocors') {
+    try {
+      const r = await timed({ headers: { 'Content-Type': 'application/json' } });
+      if (r.ok) { kv.set(MODE_KEY, 'cors'); return { state: 'ok' }; }
+      return { state: 'error', detail: `the flow answered with error ${r.status}` };
+    } catch (e) {
+      if (navigator.onLine === false || (e && e.name === 'AbortError')) return { state: 'offline' };
+      if (kv.get(MODE_KEY) === 'cors') return { state: 'offline' };
+      // otherwise the browser may have refused the reply (no cross-site permission): fall back below
+    }
+  }
+  try {
+    await timed({ mode: 'no-cors', headers: { 'Content-Type': 'text/plain' } });
+    kv.set(MODE_KEY, 'nocors');
+    return { state: 'unconfirmed' };
+  } catch (e) { return { state: 'offline' }; }
+}
+
+let sending = false;
+const results = {}; // id -> result
+async function processOutbox() {
+  const url = flowUrl();
+  if (!url || sending) return;
+  sending = true;
+  try {
+    const tried = new Set();
+    let item;
+    while ((item = getOutbox().find(x => !tried.has(x.id)))) { // re-read each time so forms added mid-send are included
+      tried.add(item.id);
+      const res = await sendOne(item, url);
+      results[item.id] = res;
+      if (res.state === 'ok' || res.state === 'unconfirmed') setOutbox(getOutbox().filter(x => x.id !== item.id));
+      showPostStatus(item.id);
+      if (res.state === 'offline') break;
+    }
+  } finally { sending = false; updateConnUi(); }
+}
+
+let currentId = null;
+function showPostStatus(id) {
+  if (id !== currentId) return;
+  const el = $('postStatus'), r = results[id];
+  el.hidden = false; el.className = 'status';
+  if (!r) { el.innerHTML = '<b>Posting to Teams…</b>'; return; }
+  if (r.state === 'ok') { el.className = 'status ok'; el.innerHTML = '<b>Posted to the Teams channel.</b>'; }
+  else if (r.state === 'unconfirmed') { el.className = 'status ok'; el.innerHTML = '<b>Sent to Teams.</b> Check the channel to confirm it arrived.'; }
+  else if (r.state === 'offline') { el.className = 'status bad'; el.innerHTML = '<b>No connection right now.</b> It\'s saved on this phone and will post the next time the app is open with signal.'; }
+  else { el.className = 'status bad'; el.innerHTML = `<b>Teams didn't accept it</b> (${htmlEsc(r.detail)}). It's saved on this phone. Check Settings, or tell your office.`; }
+}
+
 function makePdf() {
   const d = collect();
   const bytes = buildPdf(d);
@@ -732,6 +911,18 @@ function makePdf() {
   let canShare = false;
   try { canShare = !!(navigator.canShare && navigator.canShare({ files: [new File([blob], name, { type: 'application/pdf' })] })); } catch (e) {}
   $('sharePdf').hidden = !canShare;
+  currentId = null;
+  $('postStatus').hidden = true;
+  if (flowUrl()) {
+    const payload = buildSubmission(d, bytes, name);
+    currentId = payload.id;
+    setOutbox(getOutbox().concat([payload]));
+    $('doneTitle').textContent = 'Submitted';
+    showPostStatus(currentId);
+    processOutbox();
+  } else {
+    $('doneTitle').textContent = 'PDF ready';
+  }
   $('dlgDone').showModal();
 }
 function onSubmit() {
@@ -754,13 +945,50 @@ function downloadPdf() {
   document.body.appendChild(a); a.click(); a.remove();
 }
 
+/* ---------------- Settings dialog ---------------- */
+function openConnect() {
+  $('flowUrl').value = flowUrl();
+  $('flowErr').classList.remove('show');
+  $('testStatus').hidden = true;
+  refreshTabUrl();
+  updateConnUi();
+  $('dlgConnect').showModal();
+}
+function refreshTabUrl() {}
+function saveFlow() {
+  const u = $('flowUrl').value.trim();
+  if (!validFlowUrl(u)) { $('flowErr').classList.add('show'); return false; }
+  $('flowErr').classList.remove('show');
+  if (u !== flowUrl()) kv.del(MODE_KEY);
+  kv.set(FLOW_KEY, u);
+  updateConnUi();
+  processOutbox();
+  return true;
+}
+async function testFlow() {
+  if (!saveFlow()) return;
+  const el = $('testStatus');
+  el.hidden = false; el.className = 'status'; el.innerHTML = '<b>Sending a test post…</b>';
+  const pdf = new Pdf();
+  pdf.text(pdf.W / 2, 120, 'Connection test', 24, { align: 'center' });
+  pdf.text(pdf.W / 2, 160, 'Tower Access attestation app - ' + new Date().toLocaleString('en-CA'), 11, { align: 'center' });
+  const bytes = pdf.output('Connection test');
+  const d = { contractor: '', site: 'Connection test', when: '', byName: '', byTitle: '', byDate: '', checks: checks.map(() => true), workers: [] };
+  const payload = buildSubmission(d, bytes, `Connection-test_${localDateValue(new Date())}_${Date.now().toString(36)}.pdf`, { test: true });
+  const r = await sendOne(payload, flowUrl());
+  if (r.state === 'ok') { el.className = 'status ok'; el.innerHTML = '<b>Test posted.</b> Check the channel for the message.'; }
+  else if (r.state === 'unconfirmed') { el.className = 'status ok'; el.innerHTML = '<b>Test sent.</b> This phone can\'t read Teams\' reply, so check the channel to confirm it arrived.'; }
+  else if (r.state === 'offline') { el.className = 'status bad'; el.innerHTML = '<b>Couldn\'t reach Teams.</b> Check this phone has signal and try again.'; }
+  else { el.className = 'status bad'; el.innerHTML = `<b>The flow rejected the test</b> (${htmlEsc(r.detail)}). Check the address was copied in full.`; }
+}
+
 /* ---------------- Teams integration (optional; the page works without it) ---------------- */
 function applyTeamsTheme(t) {
   document.documentElement.setAttribute('data-theme', t === 'default' ? 'light' : 'dark');
 }
 function initTeams() {
   const s = document.createElement('script');
-  s.src = 'https://unpkg.com/@microsoft/teams-js@2/dist/MicrosoftTeams.min.js';
+  s.src = 'https://unpkg.com/@microsoft/teams-js@2.22.0/dist/MicrosoftTeams.min.js';
   s.async = true;
   s.onload = async () => {
     const mt = window.microsoftTeams;
@@ -771,6 +999,7 @@ function initTeams() {
       if (ctx && ctx.app && ctx.app.theme) applyTeamsTheme(ctx.app.theme);
       mt.app.registerOnThemeChangeHandler(applyTeamsTheme);
       const u = ctx && ctx.user;
+      if (u) teamsUser = { name: u.displayName || '', upn: u.userPrincipalName || u.loginHint || '' };
       if (u && !$('byName').value && u.displayName) { $('byName').value = u.displayName; updateCert(); save(); }
       mt.app.notifySuccess();
     } catch (e) { /* not running inside Teams — fine */ }
@@ -779,12 +1008,14 @@ function initTeams() {
 }
 
 /* ---------------- Wire up ---------------- */
+readFlowFromUrl();
 buildSections();
 initSig();
 restore();
 setDefaults();
 updateProgress();
 updateCert();
+updateConnUi();
 document.querySelectorAll('[data-req] input').forEach(i => i.addEventListener('input', () => {
   i.closest('[data-req]').classList.remove('invalid'); save();
 }));
@@ -802,7 +1033,25 @@ $('proceedAnyway').addEventListener('click', () => { $('dlgUnchecked').close(); 
 $('sharePdf').addEventListener('click', sharePdf);
 $('downloadPdf').addEventListener('click', downloadPdf);
 $('openPdf').addEventListener('click', () => window.open(lastPdf.url, '_blank'));
+$('newForm').addEventListener('click', () => { $('dlgDone').close(); resetAll(true); });
 $('closeDone').addEventListener('click', () => $('dlgDone').close());
+$('outboxRetry').addEventListener('click', processOutbox);
+$('openConnect').addEventListener('click', openConnect);
+$('flowUrl').addEventListener('input', refreshTabUrl);
+$('saveFlow').addEventListener('click', () => { if (saveFlow()) $('dlgConnect').close(); });
+$('testFlow').addEventListener('click', testFlow);
+$('removeFlow').addEventListener('click', () => {
+  if (!confirm('Stop posting to Teams from this phone?')) return;
+  kv.del(FLOW_KEY); kv.del(MODE_KEY); $('flowUrl').value = ''; refreshTabUrl(); updateConnUi();
+});
+$('clearOutbox').addEventListener('click', () => {
+  if (!confirm('Discard the forms waiting to post? They will not reach Teams.')) return;
+  setOutbox([]);
+});
+$('closeConnect').addEventListener('click', () => $('dlgConnect').close());
+window.addEventListener('online', processOutbox);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') processOutbox(); });
+processOutbox();
 initTeams();
 </script>
 </body>
