@@ -159,7 +159,6 @@
     width: 100%; min-height: 96px; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--ink);
     background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 10px; resize: vertical; word-break: break-all;
   }
-  .copybox { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; word-break: break-all; background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; max-height: 96px; overflow: auto; }
 </style>
 </head>
 <body>
@@ -240,7 +239,7 @@
   <div class="row" style="justify-content:center;margin-top:8px">
     <button type="button" class="btn link" id="resetAll">Start a new blank form</button>
   </div>
-  <p class="saved" id="savedNote">Your progress is saved on this device until you start a new form.</p>
+  <p class="saved" id="savedNote">The form starts blank each time it's opened.</p>
   <p class="conn"><span id="connLabel"></span> <button type="button" class="btn link" id="openConnect">Settings</button></p>
 </main>
 
@@ -322,14 +321,8 @@ const SECTIONS = [
     'If conditions change during the work and the fall protection plan needs to be modified, the most recent version is also provided after the activity is completed.' ] }
 ];
 const FOOTER_LEFT = '2025 | Corporate Health and Safety | V1.0';
-const STORE_KEY = 'towerAttestationDraft.v1';
-
-/* ---------------- Storage (optional; never required) ---------------- */
-const store = {
-  get() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (e) { return null; } },
-  set(v) { try { localStorage.setItem(STORE_KEY, JSON.stringify(v)); return true; } catch (e) { return false; } },
-  clear() { try { localStorage.removeItem(STORE_KEY); } catch (e) {} }
-};
+/* The form always opens blank. Remove any draft saved by earlier versions of the app. */
+try { localStorage.removeItem('towerAttestationDraft.v1'); } catch (e) {}
 
 const $ = id => document.getElementById(id);
 const checks = []; // {section, text, el}
@@ -351,7 +344,7 @@ function buildSections() {
       lab.querySelector('.txt').textContent = t;
       card.appendChild(lab);
       const input = lab.querySelector('input');
-      input.addEventListener('change', () => { lab.classList.toggle('checked', input.checked); updateProgress(); save(); });
+      input.addEventListener('change', () => { lab.classList.toggle('checked', input.checked); updateProgress(); });
       checks.push({ si, section: s.title, text: t, el: input, lab });
     });
     host.appendChild(card);
@@ -382,9 +375,9 @@ function addWorker(name = '', title = '', focus = false) {
   row.querySelector('button').addEventListener('click', () => {
     row.remove();
     if (!$('workers').children.length) addWorker();
-    countWorkers(); save();
+    countWorkers();
   });
-  row.addEventListener('input', () => { countWorkers(); save(); });
+  row.addEventListener('input', countWorkers);
   $('workers').appendChild(row);
   if (focus) n.focus();
   countWorkers();
@@ -432,7 +425,7 @@ function initSig() {
     }
     if (!sig.has) { sig.has = true; $('sigwrap').classList.add('has'); $('sigwrap').classList.remove('invalid'); $('sigErr').classList.remove('show'); }
   });
-  const end = () => { if (sig.drawing) { sig.drawing = false; if (sig.has) save(); } };
+  const end = () => { sig.drawing = false; };
   sig.canvas.addEventListener('pointerup', end);
   sig.canvas.addEventListener('pointercancel', end);
   let rt; window.addEventListener('resize', () => {
@@ -462,7 +455,7 @@ function sizeSig(restoreUrl) {
 }
 function clearSig() {
   sig.has = false; $('sigwrap').classList.remove('has');
-  sizeSig(null); save();
+  sizeSig(null);
 }
 /* Trimmed, downscaled JPEG of the signature for the PDF */
 function sigJpeg() {
@@ -487,29 +480,6 @@ function sigJpeg() {
   return { bytes: atob(url.split(',')[1]), w: out.width, h: out.height };
 }
 
-/* ---------------- Draft save / restore ---------------- */
-let saveTimer;
-function save() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    store.set({
-      contractor: $('contractor').value, site: $('site').value, when: $('when').value,
-      byName: $('byName').value, byTitle: $('byTitle').value, byDate: $('byDate').value,
-      checks: checks.map(c => c.el.checked),
-      workers: [...$('workers').children].map(r => [...r.querySelectorAll('input')].map(i => i.value)),
-      sig: sig.has ? sig.canvas.toDataURL('image/png') : null
-    });
-  }, 250);
-}
-function restore() {
-  const d = store.get();
-  if (!d) { addWorker(); return false; }
-  ['contractor', 'site', 'when', 'byName', 'byTitle', 'byDate'].forEach(k => { if (d[k] != null) $(k).value = d[k]; });
-  (d.checks || []).forEach((v, i) => { if (checks[i]) { checks[i].el.checked = !!v; checks[i].lab.classList.toggle('checked', !!v); } });
-  (d.workers && d.workers.length ? d.workers : [['', '']]).forEach(w => addWorker(w[0] || '', w[1] || ''));
-  if (d.sig) sizeSig(d.sig);
-  return true;
-}
 function localDateValue(dt) {
   const p = n => String(n).padStart(2, '0');
   return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
@@ -525,7 +495,6 @@ function setDefaults() {
 }
 function resetAll(skipConfirm) {
   if (skipConfirm !== true && !confirm('Clear everything and start a new blank form?')) return;
-  store.clear();
   ['contractor', 'site', 'when', 'byName', 'byTitle', 'byDate'].forEach(k => $(k).value = '');
   checks.forEach(c => { c.el.checked = false; c.lab.classList.remove('checked'); });
   $('workers').innerHTML = ''; addWorker();
@@ -949,11 +918,9 @@ function openConnect() {
   $('flowUrl').value = flowUrl();
   $('flowErr').classList.remove('show');
   $('testStatus').hidden = true;
-  refreshTabUrl();
   updateConnUi();
   $('dlgConnect').showModal();
 }
-function refreshTabUrl() {}
 function saveFlow() {
   const u = $('flowUrl').value.trim();
   if (!validFlowUrl(u)) { $('flowErr').classList.add('show'); return false; }
@@ -999,7 +966,7 @@ function initTeams() {
       mt.app.registerOnThemeChangeHandler(applyTeamsTheme);
       const u = ctx && ctx.user;
       if (u) teamsUser = { name: u.displayName || '', upn: u.userPrincipalName || u.loginHint || '' };
-      if (u && !$('byName').value && u.displayName) { $('byName').value = u.displayName; updateCert(); save(); }
+      if (u && !$('byName').value && u.displayName) { $('byName').value = u.displayName; updateCert(); }
       mt.app.notifySuccess();
     } catch (e) { /* not running inside Teams — fine */ }
   };
@@ -1010,13 +977,13 @@ function initTeams() {
 readFlowFromUrl();
 buildSections();
 initSig();
-restore();
+addWorker();
 setDefaults();
 updateProgress();
 updateCert();
 updateConnUi();
 document.querySelectorAll('[data-req] input').forEach(i => i.addEventListener('input', () => {
-  i.closest('[data-req]').classList.remove('invalid'); save();
+  i.closest('[data-req]').classList.remove('invalid');
 }));
 ['byName', 'byTitle'].forEach(k => $(k).addEventListener('input', updateCert));
 $('addWorker').addEventListener('click', () => { addWorker('', '', true); $('workersErr').classList.remove('show'); });
@@ -1036,12 +1003,11 @@ $('newForm').addEventListener('click', () => { $('dlgDone').close(); resetAll(tr
 $('closeDone').addEventListener('click', () => $('dlgDone').close());
 $('outboxRetry').addEventListener('click', processOutbox);
 $('openConnect').addEventListener('click', openConnect);
-$('flowUrl').addEventListener('input', refreshTabUrl);
 $('saveFlow').addEventListener('click', () => { if (saveFlow()) $('dlgConnect').close(); });
 $('testFlow').addEventListener('click', testFlow);
 $('removeFlow').addEventListener('click', () => {
   if (!confirm('Stop posting to Teams from this phone?')) return;
-  kv.del(FLOW_KEY); kv.del(MODE_KEY); $('flowUrl').value = ''; refreshTabUrl(); updateConnUi();
+  kv.del(FLOW_KEY); kv.del(MODE_KEY); $('flowUrl').value = ''; updateConnUi();
 });
 $('clearOutbox').addEventListener('click', () => {
   if (!confirm('Discard the forms waiting to post? They will not reach Teams.')) return;
