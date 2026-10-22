@@ -490,6 +490,7 @@ function localDateTimeValue(dt) {
 }
 function setDefaults() {
   const now = new Date();
+  if (!$('contractor').value) $('contractor').value = 'The Violin Group';
   if (!$('when').value) $('when').value = localDateTimeValue(now);
   if (!$('byDate').value) $('byDate').value = localDateValue(now);
 }
